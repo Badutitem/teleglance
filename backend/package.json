@@ -1,0 +1,1 @@
+{"name":"teleglance-backend","private":true,"scripts":{"start":"node src/server.mjs","test":"node --test test/scoring.test.mjs"},"type":"module","version":"0.1.0"}
