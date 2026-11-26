@@ -9,12 +9,14 @@ import { nextSelected, nextDraftIndex, voiceReplyAvailable, detailOptionCount, d
 import { UndoGuard } from './undo'
 import { PcmRecorder, pcmToBase64 } from './audio'
 
-// TeleGlance talks ONLY to its own origin: Vite (dev) proxies /api to the
-// user's backend on 127.0.0.1:8787 — see vite.config.ts and app.json.
-// The pairing token below is a local development placeholder — the real
-// pairing flow (Nov 25) binds the app via a 6-digit code sent to the bot.
-const BACKEND_URL = '/api'
-const PAIRING_TOKEN = 'teleglance-dev'
+// TeleGlance talks to the public demo backend on Railway (seed demo data
+// only, read-only — no real Telegram ingest, no real messages). In dev the
+// Vite proxy still serves /api from that same backend — see vite.config.ts
+// and app.json. The pairing token below is baked in BY DESIGN for this
+// demo instance: it holds only seed data, so the token in the public
+// .ehpk protects nothing real.
+const BACKEND_URL = 'https://teleglance-production.up.railway.app'
+const PAIRING_TOKEN = 'ade9758e9f568b17c217c3f785db388130308ca409e7df5a754525ea8926effe'
 
 // Rendering strategy: ONE startup page with three text containers
 // (header / main / action), updated in place via textContainerUpgrade —
