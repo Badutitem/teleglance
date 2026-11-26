@@ -92,12 +92,18 @@ di bawah)
 - Create-Build form: Logo, Name, Brief description, Tags, Team Info,
   Website URL, links (GitHub/Video/Website/X/LinkedIn/Other), Markdown
   description; Contact Info: Telegram (primary)* + Backup contact*
-  (Discord mr.clown. is available).
+  (Discord mr.clown. is available). **Tags are preset-only (26 Nov
+  15:33): the form offers 7 single-choice categories (Crypto/Web3,
+  Quantum, Space, AI, Robotics, Biotechnology, Other) — no custom tags.
+  The 6 requested tags (Telegram, Even Realities, G2, Smart Glasses,
+  AI Agent, Digest) cannot be entered; "AI" is the fitting preset if
+  the user wants one.**
 
 ## Remaining steps before the user presses submit
 
 1. Repo publik https://github.com/Badutitem/teleglance — sudah ada, head
-   32038e06 (26 Nov). Push berikutnya: BUILD-LOG + SUBMISSION + logo-iris.png.
+   234b0624 (26 Nov). Push berikutnya: logo-iris.png saja (binary, rute
+   web UI).
 2. Final demo video — SELESAI 26 Nov 15:28. Video baru v2 bersuara
    https://youtu.be/TZjN9Ppy3-o, link BUIDL sudah diganti, release GitHub
    v1.1 https://github.com/Badutitem/teleglance/releases/tag/v1.1 (video
