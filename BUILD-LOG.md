@@ -233,3 +233,10 @@ BELUM SELESAI (butuh tangan user): (a) pesan tes baru di grup Siluman — digest
 - Upload selesai 15:22-15:28: video Iris v2 naik ke YouTube Unlisted Badut aja https://youtu.be/TZjN9Ppy3-o, link video BUIDL 51712 diganti ke itu dan terverifikasi di halaman publik, release GitHub v1.1 terbit https://github.com/Badutitem/teleglance/releases/tag/v1.1 (aset: iris-demo-final-voiced-v2.mp4 411 KB + teleglance.ehpk 31,8 KB, Latest, v1.0 tidak disentuh).
 - Deskripsi baru terpasang 15:31 (user OK 15:29): versi Inggris dari draf Indonesia 14:24 (kurir pribadi, BACA, TULIS, bukti live, belum terbukti, 5 permintaan API). Edit pertama nyaris nempel ke teks lama, dikosongkan dulu baru ditempel utuh. Terverifikasi di halaman publik: deskripsi lengkap, nama/tagline/video/logo tidak berubah.
 - Tag GAGAL dipasang 15:33: form DoraHacks cuma punya 7 kategori preset pilihan tunggal (Crypto/Web3, Quantum, Space, AI, Robotics, Biotechnology, Other), tanpa isian tag kustom. 6 tag yang diminta (Telegram, Even Realities, G2, Smart Glasses, AI Agent, Digest) tidak bisa masuk. "Other" tidak disimpan karena salah. Halaman publik tetap tanpa tag; nama/tagline/deskripsi/video/logo tidak berubah.
+- Tag dibatalkan user 15:34 ("No tags"): edit pasang AI yang baru jalan langsung dihentikan (jendela browser ditutup). Verifikasi halaman publik lagi jalan buat mastiin tidak ada tag yang sempat tersimpan.
+- Verifikasi 15:35: halaman publik 51712 TIDAK ada chip tag apa pun (AI tidak sempat tersimpan). Nama, tagline, video, deskripsi tetap seperti habis edit 15:31.
+- Link release v1.1 ditambah ke BUIDL 15:45 (user OK): kolom link "Other" =
+  https://github.com/Badutitem/teleglance/releases/tag/v1.1, terverifikasi
+  di halaman publik. Label tidak bisa dipasang (kolom Other cuma kotak URL,
+  tanpa kolom label) jadi tampil sebagai URL mentah. Nama/tagline/deskripsi/
+  video/logo/tag tidak berubah.

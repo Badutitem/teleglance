@@ -41,8 +41,10 @@ What we ask from the APIs we use. 1. A read-only digest scope in the Telegram Bo
 Siluman #52 jadi bintang, kartu judul/akhir biru putih. Video lama
 PZGwLfOcSRE masih ada (Unlisted, tidak dihapus).
 
-**GitHub:** (repo publik — user membuat repo, Shiina push; lihat langkah
-di bawah)
+**GitHub:** https://github.com/Badutitem/teleglance (repo publik).
+**Release v1.1:** https://github.com/Badutitem/teleglance/releases/tag/v1.1
+(video bersuara v2 + .ehpk baru) — sudah ditautkan di BUIDL sebagai link
+"Other" 26 Nov 15:45 (tanpa label, kolom Other cuma kotak URL).
 
 **Feature requests (deliverable, up to 5):**
 1. Telegram Bot API: a read-only "digest scope" for bots — message counts
