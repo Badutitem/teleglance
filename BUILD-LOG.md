@@ -365,3 +365,46 @@ satu-satunya keunggulan keamanan rival yang Iris tidak punya.
 - Stack tes dimatikan semua sesudah tes (simulator, vite 5174, proxy
   8795, backend demo 8790; port terverifikasi kosong). Stack live
   yang ditinggal jalan: backend 8787 + sidecar 8791 + vite 5173.
+
+## 2026-11-26 — Video demo v3: voice reply + undo guard (perintah user "Jalanin satu persatu")
+- Direkam 16:31-16:40 WIB lawan stack DEMO (bukan live): backend 8790 +
+  DB copy /tmp/iris-demo.sqlite (51 pesan, item #52 asli) TANPA token bot
+  + vite 5174 (config sementara vite.demo.config.ts, dihapus sesudahnya)
+  + sidecar STT 8791 yang sama (dipakai live). Alasan: /send di stack live
+  bakal kirim pesan Telegram kedua ke Siluman — DILARANG. Satu-satunya
+  kirim selama rekaman adalah 1× demo-log di backend demo (teks TEST);
+  live DB terverifikasi utuh sesudahnya (51 pesan, sentReply #52 tetap
+  "Saya catat jam 3:00 di kalender.").
+- 4 segmen x11grab (crop=610:292:640:0 scale 2x neighbor 15fps, RGB
+  mentah langsung — tanpa komposit alpha): S1 digest #52 asli → detail
+  Draft 1/3; S2 ?test=voice layar "Recording… speak now." (TIDAK tap
+  STOP — simulator tak ada mic, STOP bakal ke layar error; potongan ke
+  menu adalah edit, narasi tidak klaim mic live); S3 ?test=voice-menu
+  transkrip TEST berlabel → SEND → "Sending in 2s" → Sent (demo mode);
+  S4 ?test=voice-menu SEND → tap UNDO 1,5 dtk kemudian → kembali ke
+  menu, transkrip utuh, TIDAK terkirim. Jebakan: pkill/pgrep -f
+  "evenhub-simulator" bisa bunuh proses yang salah / match shell sendiri
+  — bunuh simulator pakai PID dari `ss` (port 9899); port automation
+  yang masih terpegang bikin simulator baru ABORT (AddrInUse).
+- Rakit: 9 beat (digest 3,5 + detail 3,5 + rekam 3 + menu 2,5 +
+  sending 3 + sent 3 + menu 1,5 + sending 1,5 + menu 2,5 = 24,1 dtk)
+  + kartu judul Iris 2,5 dtk + kartu akhir 3 dtk = 29,6 dtk, 1220x584.
+  Caption bawah 5 buah (angka asli: 1 urgent - 0 FYI - 0 noise).
+  Voiceover Inggris 7 klip (Helio avocado_v2:MAI_03): judul, triage,
+  voice/draft, transkripsi lokal, undo, cancel, end card. Jeda antar
+  klip maks 1,63 dtk (silencedetect, batas 2 dtk).
+- Hasil: `evidence/iris-demo-final-voiced-v3.mp4` — 1220x584 h264+aac,
+  29,60 dtk, 526.072 byte. Verifikasi: durasi/resolusi/audio OK,
+  30 frame sampel (1 fps) tidak ada yang hitam, 3 frame kunci dicek
+  visual (detail #52, sending + hitung mundur, cancel). v2 TIDAK
+  disentuh. BELUM: upload YouTube, ganti link BUIDL, release baru.
+- Stack live ditinggal jalan: backend 8787 + sidecar 8791 + vite 5173.
+  Stack demo dimatikan semua (8790/5174/simulator).
+- Video v3 diupload 16:44 (YouTube urmp4rsGhBg, Unlisted, kanal Badut aja)
+  dan link BUIDL ditukar ke v3 16:45, terverifikasi di halaman publik.
+  Deskripsi BUIDL berikutnya: tambah paragraf voice + undo guard.
+- Deskripsi BUIDL diupdate 16:47 (paragraf voice + undo guard, kalimat live
+  mic untested), terverifikasi di halaman publik, tidak terduplikasi.
+  Berikutnya: release v1.2 dengan .ehpk baru 34.421 byte.
+- Release v1.2 terbit 16:48 (Latest, video v3 + .ehpk 34.421 byte).
+  Link Other BUIDL masih v1.1, ditukar ke v1.2 sebagai penutup langkah release.

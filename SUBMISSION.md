@@ -28,23 +28,26 @@ READ. Your own bot pulls messages from the Bot API with long polling. A dependen
 
 WRITE. For urgent messages the backend writes 3 short reply drafts in the original message's language. The chosen draft only sends with one physical tap on the glasses. Nothing sends by itself. Writing is off by default. Read-only mode keeps the digest alive while sending is always refused. Zero API keys. Everything lives only in your own SQLite file.
 
+Voice works the same way. Speak on the glasses and the transcript becomes your answer. Transcription runs locally on your own backend. No cloud. No API key. Every send waits three seconds. Tap to undo.
+
 Proven live with our own Telegram group. A real message entered the digest, then its reply went back to the group through the bot. Repeated on Nov 26 after a full rebuild.
 
-Not yet proven. No G2 device here. Everything was tested in the official simulator and on live Telegram. Scroll on real hardware is untested.
+Not yet proven. No G2 device here. Everything was tested in the official simulator and on live Telegram. Scroll on real hardware is untested. Live mic on real hardware is untested.
 
 What we ask from the APIs we use. 1. A read-only digest scope in the Telegram Bot API. A bot can see counts and metadata for chats the user allows without joining every group as a full member. 2. An assistant identity badge. A message sent on the user's behalf should look different from a bot announcement. 3. A selected index changed event in the Even Hub SDK that is clearly distinct from click. Scroll to choose needs a reliable signal. 4. A documented localhost whitelist for dev backends. A local-first app should not need a public tunnel. 5. A built-in MP4 record button for the lens panel in the Even Hub Simulator. Not x11grab plus manual cropping.
 
 (English version of the Indonesian draft the user approved 26 Nov 15:29. Indonesian source draft lives in this chat, 14:24 message.)
 
-**Demo video:** https://www.youtube.com/watch?v=TZjN9Ppy3-o (UNLISTED, channel
-"Badut aja") — video baru Iris 26 Nov, 30 detik, narasi Inggris, pesan asli
-Siluman #52 jadi bintang, kartu judul/akhir biru putih. Video lama
-PZGwLfOcSRE masih ada (Unlisted, tidak dihapus).
+**Demo video:** https://www.youtube.com/watch?v=urmp4rsGhBg (UNLISTED, channel
+"Badut aja") — video v3 Iris 26 Nov, 30 detik, narasi Inggris, voice reply +
+undo guard, pesan asli Siluman #52 jadi bintang, kartu judul/akhir biru
+putih. Video v2 TZjN9Ppy3-o masih ada (Unlisted, tidak dihapus).
 
 **GitHub:** https://github.com/Badutitem/teleglance (repo publik).
-**Release v1.1:** https://github.com/Badutitem/teleglance/releases/tag/v1.1
-(video bersuara v2 + .ehpk baru) — sudah ditautkan di BUIDL sebagai link
-"Other" 26 Nov 15:45 (tanpa label, kolom Other cuma kotak URL).
+**Release v1.2:** https://github.com/Badutitem/teleglance/releases/tag/v1.2
+(video v3 + .ehpk 34.421 byte, voice + undo guard) — Latest, 26 Nov 16:48.
+Link "Other" di BUIDL masih v1.1, ditukar ke v1.2 sesudah release jadi.
+Release v1.1 tetap ada, tidak dihapus.
 
 **Voice reply (built 26 Nov, NOT yet on BUIDL):** speak the reply on the
 glasses — a "[Voice reply]" row on the detail page records via the G2 mic
@@ -141,14 +144,14 @@ voice, putuskan dengan user sebelum submit.
 
 ## Remaining steps before the user presses submit
 
-1. Repo publik https://github.com/Badutitem/teleglance — sudah ada, head
-   234b0624 (26 Nov). Push berikutnya: logo-iris.png saja (binary, rute
-   web UI). Catatan: kode voice reply + undo guard (26 Nov, belum di-push)
-   + .ehpk baru (34.421 byte, lokal) belum masuk repo/release.
-2. Final demo video — SELESAI 26 Nov 15:28. Video baru v2 bersuara
-   https://youtu.be/TZjN9Ppy3-o, link BUIDL sudah diganti, release GitHub
-   v1.1 https://github.com/Badutitem/teleglance/releases/tag/v1.1 (video
-   + .ehpk baru). SISA: video belum menampilkan voice reply dan undo guard
-   (rekam ulang bila mau), deskripsi BUIDL belum menyebut voice/undo guard
-   (tambah baris bila mau), release baru buat .ehpk suara + undo guard.
-3. User klik Submit for Review (deadline 30 Nov 02:59 WIB).
+1. Repo publik https://github.com/Badutitem/teleglance — head e83fb7f
+   (26 Nov): kode voice reply + undo guard SUDAH di-push. Sisa: logo-iris.png
+   saja (binary, rute web UI).
+2. Video v3 (voice + undo guard) SELESAI 26 Nov ~16:40, SUDAH di-upload
+   ke YouTube https://youtu.be/urmp4rsGhBg (Unlisted), link BUIDL sudah
+   diganti ke v3, release GitHub v1.2
+   https://github.com/Badutitem/teleglance/releases/tag/v1.2 (video v3 +
+   .ehpk 34.421 byte, Latest).
+3. Deskripsi BUIDL SUDAH menyebut voice + undo guard (paragraf "Voice works
+   the same way" + kalimat live mic untested), terverifikasi 26 Nov 16:47.
+4. User klik Submit for Review (deadline 30 Nov 02:59 WIB).
