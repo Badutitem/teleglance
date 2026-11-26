@@ -5,6 +5,7 @@ import {
   nextDraftIndex,
   voiceReplyAvailable,
   detailOptionCount,
+  detailRowKind,
 } from '../src/nav.ts'
 
 test('nextSelected clamps into [0, maxIndex]', () => {
@@ -34,7 +35,17 @@ test('voiceReplyAvailable follows the same gates as sending', () => {
   assert.equal(voiceReplyAvailable({ canReply: true, writeEnabled: true }, true), false)
 })
 
-test('detailOptionCount adds the voice row only when available', () => {
-  assert.equal(detailOptionCount(3, true), 4)
-  assert.equal(detailOptionCount(3, false), 3)
+test('detailOptionCount adds the voice row and the trailing [Done] row', () => {
+  assert.equal(detailOptionCount(3, true), 5) // 3 drafts + voice + done
+  assert.equal(detailOptionCount(3, false), 4) // 3 drafts + done
+})
+
+test('detailRowKind: drafts first, then voice, then done last', () => {
+  assert.equal(detailRowKind(0, 3, true), 'draft')
+  assert.equal(detailRowKind(2, 3, true), 'draft')
+  assert.equal(detailRowKind(3, 3, true), 'voice')
+  assert.equal(detailRowKind(4, 3, true), 'done')
+  // No voice row: the row after the drafts is Done.
+  assert.equal(detailRowKind(2, 3, false), 'draft')
+  assert.equal(detailRowKind(3, 3, false), 'done')
 })

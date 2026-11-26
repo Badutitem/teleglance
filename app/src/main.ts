@@ -5,7 +5,7 @@ import {
   TextContainerUpgrade,
   OsEventTypeList,
 } from '@evenrealities/even_hub_sdk'
-import { nextSelected, nextDraftIndex, voiceReplyAvailable, detailOptionCount } from './nav'
+import { nextSelected, nextDraftIndex, voiceReplyAvailable, detailOptionCount, detailRowKind } from './nav'
 import { UndoGuard } from './undo'
 import { PcmRecorder, pcmToBase64 } from './audio'
 
@@ -240,10 +240,18 @@ async function renderDetail() {
     await upgrade(3, 'action', `Draft (copy-ready): ${item.drafts[0]}\nRead-only mode — sending is off. 2xTap: back`)
   } else if (writesOff(item)) {
     await upgrade(3, 'action', `Writes are OFF for ${item.chatTitle}.\nTap: ENABLE writes · 2xTap: back`)
-  } else if (draftIndex === item.drafts.length) {
-    await upgrade(3, 'action', 'Voice reply — Tap: RECORD · Scroll: other draft · 2xTap: back')
   } else {
-    await upgrade(3, 'action', `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
+    // Rows: the text drafts, then [Voice reply] when available, then
+    // [Done] last. Done is local triage (no Telegram post), so it is
+    // offered here without the write gate.
+    const kind = detailRowKind(draftIndex, item.drafts.length, voiceReplyAvailable(item, !!digest.readOnly))
+    if (kind === 'voice') {
+      await upgrade(3, 'action', 'Voice reply — Tap: RECORD · Scroll: other draft · 2xTap: back')
+    } else if (kind === 'done') {
+      await upgrade(3, 'action', '[Done] — Tap: mark done · Scroll: other draft · 2xTap: back')
+    } else {
+      await upgrade(3, 'action', `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
+    }
   }
 }
 
@@ -379,6 +387,30 @@ async function sendSelected() {
   await armUndoGuard({ kind: 'draft', itemId: item.id, draftIndex, text, returnTo: 'detail' })
 }
 
+// Mark-as-done: local triage only — POST /done, then reload the digest
+// (the item is gone from it). Nothing is posted to Telegram, so there is
+// no write gate here; the endpoint still needs the pairing token.
+async function markDone() {
+  const item = digest.items[selected]
+  if (!item) return
+  try {
+    const res = await fetch(`${BACKEND_URL}/done`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-pairing-token': PAIRING_TOKEN },
+      body: JSON.stringify({ itemId: item.id }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  } catch {
+    // Same failure pattern as enableWrites: the status line carries the
+    // real message and the item stays put so the user can retry.
+    statusLine = 'Could not mark done — backend unreachable.'
+    await renderSent(false)
+    return
+  }
+  await loadDigest()
+  await renderDigest()
+}
+
 // Boot: create the single page, then fill it with the live digest.
 const bootResult = await bridge.createStartUpPageContainer(new CreateStartUpPageContainer({
   containerTotalNum: 3,
@@ -420,6 +452,20 @@ if (new URLSearchParams(location.search).get('test') === 'voice-menu' && digest.
   voicePhase = 'menu'
   voiceTranscript = 'TEST VOICE UNDO — simulator test string, not a real transcript.'
   await renderVoice()
+}
+
+// Simulator-test hook (dev only): ?test=done boots straight into the
+// detail page of the first digest item with the [Done] row selected, so
+// the mark-as-done path can be exercised in the simulator (automation
+// cannot deliver scroll events to a text-container app, verified
+// 2026-11-23). Same rule as ?test=voice: the packaged .ehpk loads
+// index.html with no query string, so this can never trigger on real
+// hardware.
+if (new URLSearchParams(location.search).get('test') === 'done' && digest.items.length > 0) {
+  selected = 0
+  const first = digest.items[0]
+  draftIndex = detailOptionCount(first.drafts.length, voiceReplyAvailable(first, !!digest.readOnly)) - 1
+  await renderDetail()
 }
 
 // CLICK_EVENT is 0 and protobuf omits zero-value fields, so a tap arrives
@@ -479,15 +525,19 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
     } else if (page === 'detail') {
       const item = digest.items[selected]
       if (item?.canReply && !writesOff(item) && !digest.readOnly) {
-        // Drafts plus the trailing [Voice reply] row.
-        const count = detailOptionCount(item.drafts.length, voiceReplyAvailable(item, !!digest.readOnly))
+        // Drafts plus the trailing [Voice reply] and [Done] rows.
+        const voice = voiceReplyAvailable(item, !!digest.readOnly)
+        const count = detailOptionCount(item.drafts.length, voice)
         const prev = draftIndex
         draftIndex = nextDraftIndex(draftIndex, dir, count)
-        if (prev === item.drafts.length || draftIndex === item.drafts.length) {
-          await renderDetail()
-        } else {
+        // Draft-to-draft scrolls only refresh the action line; moving
+        // onto or off a voice/done row re-renders the whole detail page.
+        if (detailRowKind(prev, item.drafts.length, voice) === 'draft'
+          && detailRowKind(draftIndex, item.drafts.length, voice) === 'draft') {
           await upgrade(3, 'action',
             `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
+        } else {
+          await renderDetail()
         }
       }
     } else if (page === 'voice' && voicePhase === 'menu') {
@@ -519,6 +569,7 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
         statusLine = 'Read-only mode is on — sending is disabled.'
         await renderSent(false)
       }
+      else if (item && detailRowKind(draftIndex, item.drafts.length, voiceReplyAvailable(item, !!digest.readOnly)) === 'done') await markDone()
       else if (item && voiceReplyAvailable(item, !!digest.readOnly) && draftIndex === item.drafts.length) await startVoiceReply()
       else await sendSelected()
     }

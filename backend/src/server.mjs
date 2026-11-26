@@ -1,5 +1,5 @@
 // TeleGlance backend — Node stdlib only (http + node:sqlite + fetch).
-// Endpoints: /health /digest /item/:id /drafts/:id /send /pairing-code /link /chats/write /stt
+// Endpoints: /health /digest /item/:id /drafts/:id /send /done /pairing-code /link /chats/write /stt
 // /stt forwards PCM to the STT sidecar (backend/stt-sidecar.py, free local
 // faster-whisper) — the one deliberate exception to "stdlib-only": Node
 // cannot run Whisper in-process. If the sidecar is down, /stt answers 503
@@ -132,6 +132,19 @@ const server = createServer(async (req, res) => {
       if (!authed(req, body)) return json(res, 401, { error: 'bad pairing token' })
       store.setWriteEnabled(body.chatId, !!body.enabled)
       return json(res, 200, { chatId: String(body.chatId), writeEnabled: !!body.enabled })
+    }
+
+    if (path === '/done' && req.method === 'POST') {
+      const body = await readBody(req)
+      // Mark-as-done is local triage, not a send: it needs the pairing
+      // token (only the paired user may dismiss items) but deliberately
+      // needs NO per-chat write gate and is NOT blocked by read-only mode
+      // — nothing is posted to Telegram.
+      if (!authed(req, body)) return json(res, 401, { error: 'bad pairing token' })
+      const itemId = Number(body.itemId)
+      if (!Number.isInteger(itemId) || itemId <= 0) return json(res, 400, { error: 'itemId required' })
+      if (!store.markDone(itemId)) return json(res, 404, { error: 'item not found' })
+      return json(res, 200, { done: true, itemId })
     }
 
     if (path === '/stt' && req.method === 'POST') {

@@ -408,3 +408,64 @@ satu-satunya keunggulan keamanan rival yang Iris tidak punya.
   Berikutnya: release v1.2 dengan .ehpk baru 34.421 byte.
 - Release v1.2 terbit 16:48 (Latest, video v3 + .ehpk 34.421 byte).
   Link Other BUIDL masih v1.1, ditukar ke v1.2 sebagai penutup langkah release.
+
+## 2026-11-26 — Mark-as-done — DIBANGUN
+Perintah user "Kerjain satu satu" (16:54) setelah 3 ide tambahan ditawarkan
+(pitch Demo Day, mark-as-done, host backend). Ide dari kebutuhan UX: user
+bisa balas tapi tidak bisa menutup item yang sudah ditangani.
+- Backend: `POST /done {itemId}` baru. Auth pairing token WAJIB (401 tanpa
+  token) — hanya user yang sudah pairing boleh menutup item. TIDAK perlu
+  gerbang tulis (writes ON) dan TIDAK diblokir read-only mode — tidak ada
+  pesan yang dikirim ke Telegram. ItemId tidak dikenal → 404 jujur;
+  itemId hilang/tidak valid → 400. Idempotent (tandai dua kali tetap 200).
+  Store: kolom baru `done` + `done_at` di `messages` + migrasi ALTER TABLE
+  di constructor (DB lama dibuat sebelum kolom ada — CREATE TABLE IF NOT
+  EXISTS tidak menambahkannya). `recentMessages` mengecualikan done, jadi
+  digest 24 jam + hitungannya ikut berubah. `toDigestItem` membawa
+  `done: true` untuk baris yang sudah done (masih bisa dibaca via
+  /item/:id — done itu dismissal dari digest, bukan hapus).
+- Aplikasi: baris aksi "[Done]" di halaman detail, selalu TERAKHIR
+  (draf 0-2 → voice → done). Logika di `app/src/nav.ts`:
+  `detailOptionCount` sekarang = draf + voice + done; `detailRowKind`
+  baru ('draft' | 'voice' | 'done') jadi satu sumber kebenaran untuk
+  render/scroll/klik. Tap → POST /done → digest dimuat ulang (item
+  hilang). Gagal (backend tidak terjangkau) → pola yang sama seperti
+  enableWrites: statusLine jujur + layar error, item tetap di tempat
+  untuk dicoba lagi. Alur kirim (draf/voice/undo guard) TIDAK disentuh.
+  Hook dev baru `?test=done` (boot ke detail item pertama dengan baris
+  Done terpilih; aturan sama dengan `?test=voice`: .ehpk tidak pernah
+  bawa query).
+- Tes: backend 27/27 (`npm test`: 20 lama + 7 baru — Store markDone +
+  digest mengecualikan done + HTTP 401/400/404/idempotent + BUKTI
+  pemisah gerbang: chat asli writes OFF di DB file temp → /done 200
+  sementara /send pada chat yang sama tetap 403). Aplikasi 16/16
+  (`npm test`: 15 lama + 1 detailRowKind baru; ekspektasi
+  detailOptionCount diperbarui 4→5 / 3→4). Migrasi diverifikasi pada
+  SALINAN DB live (/tmp, lalu dihapus): kolom bertambah, markDone(52)
+  benar, idempotent, unknown → false. DB LIVE TIDAK DISENTUH (masih
+  51 pesan, sentReply #52 tetap "Saya catat jam 3:00 di kalender.",
+  belum ada kolom done — migrasi jalan otomatis saat backend live
+  di-restart dengan kode baru).
+- Tes simulator lawan stack DEMO (backend 8790 :memory: seed 47 pesan,
+  TANPA token bot + vite 5174 config sementara, dihapus sesudahnya +
+  simulator Xvfb :99 automation 9899 — TIDAK ADA pesan Telegram yang
+  terkirim; stack live 8787/5173/8791 tidak disentuh): hook ?test=done
+  → detail item #52-seed ("Team call moved to 15:00") dengan baris
+  "[Done] — Tap: mark done · Scroll: other draft · 2xTap: back" →
+  1 klik → digest "0 urgent · 6 FYI · 40 noise", item #52 hilang,
+  /item/1 done=true. Konsol 17 entri, bersih, tanpa error. Bukti layar:
+  evidence/done-shot-1-detail-view.png + done-shot-2-digest-view.png
+  (screenshot automation API RGBA — kecerahan di alpha, dikomposit
+  alpha→hijau-hitam dengan PIL seperti -view.png lama; frame mentah
+  hijau polos). Jebakan: parsing /api/console — responsnya
+  {"entries": [...], "total": N}, bukan array langsung; vite yang
+  dijalankan via `npx` di subshell tidak mati saat npx dibunuh — bunuh
+  PID node dari `ss` (port 5174 sempat tertinggal, sudah dibersihkan;
+  8790/5174/9899 terverifikasi kosong sesudah tes).
+- .ehpk di-pack ulang: 34.571 byte, magic EHPK OK (sebelumnya 34.421).
+  BELUM dirilis: release v1.2 masih berisi .ehpk pra-done; video v3 +
+  deskripsi BUIDL belum menyebut done. Kode done BELUM di-push ke
+  GitHub (perintah: jangan push). PENTING UNTUK DEPLOY: backend live
+  (8787) masih jalan dengan kode LAMA — /done belum ada di sana.
+  Restart backend live dengan kode baru agar /done aktif; migrasi
+  kolom done/done_at jalan otomatis saat start, tanpa mengubah data.

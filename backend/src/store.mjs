@@ -22,7 +22,9 @@ export class Store {
         score INTEGER NOT NULL,
         can_reply INTEGER NOT NULL DEFAULT 0,
         sent_reply TEXT,
-        sent_mode TEXT
+        sent_mode TEXT,
+        done INTEGER NOT NULL DEFAULT 0,
+        done_at INTEGER
       );
       CREATE TABLE IF NOT EXISTS chat_settings (
         chat_id TEXT PRIMARY KEY,
@@ -39,6 +41,13 @@ export class Store {
         value TEXT
       );
     `)
+    // Migration for DBs created before mark-as-done (2026-11-26): the
+    // CREATE TABLE above is IF NOT EXISTS, so add the columns explicitly.
+    // ALTER fails if the column already exists — that is the expected
+    // steady state, not an error.
+    for (const col of ['done INTEGER NOT NULL DEFAULT 0', 'done_at INTEGER']) {
+      try { this.db.exec(`ALTER TABLE messages ADD COLUMN ${col}`) } catch { /* already there */ }
+    }
   }
 
   addMessage(m) {
@@ -65,12 +74,25 @@ export class Store {
   recentMessages(hours = 24) {
     const since = Math.floor(Date.now() / 1000) - hours * 3600
     return this.db.prepare(
-      'SELECT * FROM messages WHERE date_unix >= ? ORDER BY date_unix DESC',
+      // Done items are dismissed from the digest (and its counts) — they
+      // still exist in the table and are still reachable via getMessage.
+      'SELECT * FROM messages WHERE date_unix >= ? AND done = 0 ORDER BY date_unix DESC',
     ).all(since)
   }
 
   getMessage(id) {
     return this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id)
+  }
+
+  // Mark-as-done: local triage state, not a send. Idempotent — marking an
+  // already-done item returns true. Returns false only when the id does
+  // not exist (the endpoint answers 404 honestly in that case).
+  markDone(id) {
+    const row = this.getMessage(id)
+    if (!row) return false
+    this.db.prepare('UPDATE messages SET done = 1, done_at = ? WHERE id = ?')
+      .run(Math.floor(Date.now() / 1000), id)
+    return true
   }
 
   markSent(id, reply, mode) {

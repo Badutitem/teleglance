@@ -175,6 +175,7 @@ export function toDigestItem(row) {
     canReply: !!row.can_reply,
     timeLabel: timeLabel(row.date_unix),
     sentReply: row.sent_reply || null,
+    done: !!row.done,
   }
   item.drafts = buildDrafts(item)
   item.line = `${row.chat_title}: "${truncate(row.text, 44)}"`

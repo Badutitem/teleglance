@@ -26,8 +26,19 @@ export function voiceReplyAvailable(
   return item.writeEnabled !== false
 }
 
-/** Selectable rows on a detail page: the text drafts plus the trailing
- * [Voice reply] row when it is available. */
+/** Selectable rows on a detail page: the text drafts, the trailing
+ * [Voice reply] row when it is available, and the trailing [Done] row.
+ * Done is always last — marking done is local triage, not a send, so it
+ * needs no write gate and is offered on every detail page. */
 export function detailOptionCount(draftCount: number, voiceAvailable: boolean): number {
-  return draftCount + (voiceAvailable ? 1 : 0)
+  return draftCount + (voiceAvailable ? 1 : 0) + 1
+}
+
+export type DetailRowKind = 'draft' | 'voice' | 'done'
+
+/** Which row draftIndex points at: drafts first, then voice, then done. */
+export function detailRowKind(draftIndex: number, draftCount: number, voiceAvailable: boolean): DetailRowKind {
+  if (draftIndex < draftCount) return 'draft'
+  if (voiceAvailable && draftIndex === draftCount) return 'voice'
+  return 'done'
 }

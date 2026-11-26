@@ -49,7 +49,7 @@ putih. Video v2 TZjN9Ppy3-o masih ada (Unlisted, tidak dihapus).
 Link "Other" di BUIDL masih v1.1, ditukar ke v1.2 sesudah release jadi.
 Release v1.1 tetap ada, tidak dihapus.
 
-**Voice reply (built 26 Nov, NOT yet on BUIDL):** speak the reply on the
+**Voice reply (built 26 Nov, on BUIDL since 16:47):** speak the reply on the
 glasses — a "[Voice reply]" row on the detail page records via the G2 mic
 (`g2-microphone`, SDK `audioControl` + `audioEvent`), transcribes locally
 with faster-whisper `tiny` on the user's own backend (sidecar, no API key,
@@ -58,16 +58,15 @@ message being answered (ID/EN). Proven: backend 20/20 tests, app 9/9,
 HTTP end-to-end with real speech clips (ID 1.060 ms, EN 677 ms for ~2.5 s
 clips), simulator flow with the honest empty-buffer error (no fake
 transcript). NOT proven: live mic on real G2 (no device here); tiny model
-sometimes mishears Indonesian words. The BUIDL description above (installed
-15:31) does NOT mention voice, and the current video does not show it —
-decide with the user whether to add a voice line to the description and
-re-record. The voice .ehpk (33.774 bytes, EHPK magic OK) is local only —
-superseded 26 Nov by the 34.421-byte .ehpk that also includes the undo
-guard; release v1.1 still carries the pre-voice .ehpk. Run the sidecar with
+sometimes mishears Indonesian words. The BUIDL description (updated 16:47)
+mentions voice, and video v3 shows it. The voice .ehpk (33.774 bytes, EHPK
+magic OK) was superseded by the 34.421-byte .ehpk with undo guard, then by
+the 34.571-byte .ehpk with mark-as-done; release v1.2 carries the
+34.421-byte .ehpk (pre-done). Run the sidecar with
 `backend/start-stt-sidecar.sh` (port 8791; the backend answers 503 honestly
 if it is down).
 
-**Undo guard, 3 detik (built 26 Nov, NOT yet on BUIDL):** sesudah user
+**Undo guard, 3 detik (built 26 Nov, on BUIDL since 16:47):** sesudah user
 memilih SEND (draf teks maupun balasan suara), aplikasi menahan kirim
 selama 3 detik dan menampilkan "Sending… tap to undo" dengan hitung
 mundur. Tap di dalam jendela membatalkan — TIDAK ADA request yang
@@ -82,11 +81,30 @@ terkirim selama tes): batal draf → 0 /send; habis draf → tepat 1 /send;
 batal suara → 0 /send; habis suara → tepat 1 /send (teks uji). Bukti
 layar: evidence/undo-shot-*.png. Hook dev baru `?test=voice-menu`
 (boot ke menu suara dengan transkrip TEST berlabel, sama aturannya
-dengan `?test=voice`: .ehpk tidak pernah bawa query). .ehpk baru
-34.421 byte (magic EHPK OK, sudah termasuk voice + undo guard),
-lokal saja; release v1.1 masih berisi .ehpk pra-voice. Video dan
-deskripsi BUIDL belum menampilkan/menyebut undo guard — sama seperti
-voice, putuskan dengan user sebelum submit.
+dengan `?test=voice`: .ehpk tidak pernah bawa query). .ehpk 34.421 byte
+(magic EHPK OK, sudah termasuk voice + undo guard) sudah diganti 34.571
+byte (mark-as-done) — release v1.2 masih berisi .ehpk pra-done. Video v3
+dan deskripsi BUIDL (16:44/16:47) menampilkan/menyebut undo guard.
+
+**Mark-as-done (built 26 Nov, NOT yet on BUIDL):** dari halaman detail,
+user bisa menandai item urgent sebagai done tanpa mengirim apa pun ke
+Telegram. Backend: `POST /done {itemId}` — butuh token pairing (401
+tanpa token), TIDAK perlu gerbang tulis dan TIDAK diblokir read-only
+mode; itemId tidak dikenal → 404 jujur; idempotent. Kolom baru `done` +
+`done_at` di SQLite (migrasi ALTER TABLE otomatis saat backend start).
+Digest 24 jam + hitungannya mengecualikan item done. Aplikasi: baris
+"[Done]" terakhir di halaman detail (draf → voice → done), tap → POST
+/done → digest dimuat ulang tanpa item itu. Hook dev `?test=done`
+(aturan sama dengan `?test=voice`). Proven: backend 27/27, aplikasi
+16/16, simulator lawan backend demo (tanpa token bot — TIDAK ADA pesan
+Telegram yang terkirim): detail item urgent dengan baris [Done] → 1 klik
+→ digest "0 urgent", item hilang, /item done=true. Bukti layar:
+evidence/done-shot-1-detail-view.png + done-shot-2-digest-view.png.
+.ehpk baru 34.571 byte (magic EHPK OK), lokal saja; release v1.2 masih
+berisi .ehpk pra-done. Video v3 + deskripsi BUIDL belum menyebut done.
+PENTING: backend live (8787) masih jalan dengan kode lama — restart
+dengan kode baru agar /done aktif; migrasi jalan otomatis, tanpa ubah
+data. Kode done BELUM di-push ke GitHub.
 
 **Feature requests (deliverable, up to 5):**1. Telegram Bot API: a read-only "digest scope" for bots — message counts
    and metadata for chats the user consents to, without the bot needing to
@@ -151,7 +169,10 @@ voice, putuskan dengan user sebelum submit.
    ke YouTube https://youtu.be/urmp4rsGhBg (Unlisted), link BUIDL sudah
    diganti ke v3, release GitHub v1.2
    https://github.com/Badutitem/teleglance/releases/tag/v1.2 (video v3 +
-   .ehpk 34.421 byte, Latest).
+   .ehpk 34.421 byte, Latest). UPDATE 26 Nov ~17:00: mark-as-done dibangun
+   — .ehpk baru 34.571 byte LOKAL saja (release v1.2 masih pra-done);
+   video v3 + deskripsi BUIDL belum menyebut done; backend live (8787)
+   masih kode lama — restart agar /done aktif. Kode done belum di-push.
 3. Deskripsi BUIDL SUDAH menyebut voice + undo guard (paragraf "Voice works
    the same way" + kalimat live mic untested), terverifikasi 26 Nov 16:47.
 4. User klik Submit for Review (deadline 30 Nov 02:59 WIB).
