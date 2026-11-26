@@ -1,12 +1,18 @@
 // TeleGlance backend — Node stdlib only (http + node:sqlite + fetch).
-// Endpoints: /health /digest /item/:id /drafts/:id /send /pairing-code /link /chats/write
+// Endpoints: /health /digest /item/:id /drafts/:id /send /pairing-code /link /chats/write /stt
+// /stt forwards PCM to the STT sidecar (backend/stt-sidecar.py, free local
+// faster-whisper) — the one deliberate exception to "stdlib-only": Node
+// cannot run Whisper in-process. If the sidecar is down, /stt answers 503
+// honestly; it never invents a transcript.
 import { createServer } from 'node:http'
 import { Store } from './store.mjs'
 import { TelegramBot } from './telegram.mjs'
-import { buildDigest, buildDrafts, toDigestItem } from './scoring.mjs'
+import { buildDigest, buildDrafts, detectLanguage, toDigestItem } from './scoring.mjs'
 import { seed } from './seed.mjs'
 
 const PORT = Number(process.env.PORT || 8787)
+const STT_SIDECAR_URL = (process.env.STT_SIDECAR_URL || 'http://127.0.0.1:8791').replace(/\/$/, '')
+const STT_MAX_B64 = 8 * 1024 * 1024 // ~6 MB PCM ≈ 3 min of 16 kHz s16le mono
 const DB_PATH = process.env.TELEGLANCE_DB || new URL('../data/teleglance.sqlite', import.meta.url).pathname
 // Read-only mode: the digest still builds, but /send always refuses.
 // Operator-controlled via env so a demo can run hands-off safely.
@@ -43,6 +49,33 @@ async function readBody(req) {
 function authed(req, body) {
   const token = req.headers['x-pairing-token'] || body.token
   return token === PAIRING_TOKEN
+}
+
+// Validate a base64 PCM payload (s16le 16 kHz mono, as the G2 mic emits).
+// Returns the decoded Buffer, or null when there is nothing to transcribe.
+function decodePcm(audio) {
+  if (typeof audio !== 'string' || !audio) return null
+  let buf
+  try { buf = Buffer.from(audio, 'base64') } catch { return null }
+  if (!buf.length || buf.length % 2 !== 0) return null
+  return buf
+}
+
+async function transcribeViaSidecar(audioB64, language) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 60000)
+  try {
+    const res = await fetch(`${STT_SIDECAR_URL}/transcribe`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ audio: audioB64, language }),
+      signal: ctrl.signal,
+    })
+    const data = await res.json().catch(() => ({}))
+    return { status: res.status, data }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 const server = createServer(async (req, res) => {
@@ -101,6 +134,49 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { chatId: String(body.chatId), writeEnabled: !!body.enabled })
     }
 
+    if (path === '/stt' && req.method === 'POST') {
+      const body = await readBody(req)
+      if (!authed(req, body)) return json(res, 401, { error: 'bad pairing token' })
+      if (typeof body.audio === 'string' && body.audio.length > STT_MAX_B64) {
+        return json(res, 413, { error: 'audio too long (max ~3 minutes)' })
+      }
+      const pcm = decodePcm(body.audio)
+      if (!pcm) {
+        // Empty buffer (e.g. simulator with no live mic): an honest error,
+        // never a scripted or invented transcript.
+        return json(res, 400, { error: 'no audio captured — nothing to transcribe' })
+      }
+      // STT language follows the message being answered (bilingual, like
+      // the drafts); an explicit body.language overrides it.
+      let language = body.language === 'id' || body.language === 'en' ? body.language : null
+      if (!language && body.itemId) {
+        const row = store.getMessage(Number(body.itemId))
+        if (row) language = detectLanguage(row.text || '')
+      }
+      language = language || 'en'
+      const t0 = Date.now()
+      let stt
+      try {
+        stt = await transcribeViaSidecar(body.audio, language)
+      } catch {
+        return json(res, 503, { error: 'speech service unavailable — start the STT sidecar (backend/start-stt-sidecar.sh)' })
+      }
+      if (stt.status !== 200) {
+        return json(res, stt.status === 422 ? 422 : 502, {
+          error: stt.data.error || `speech service failed (HTTP ${stt.status})`,
+        })
+      }
+      if (!stt.data.transcript) {
+        return json(res, 422, { error: 'no speech detected in the recording' })
+      }
+      return json(res, 200, {
+        transcript: stt.data.transcript,
+        language: stt.data.language || language,
+        durationSec: stt.data.durationSec,
+        sttMs: Date.now() - t0,
+      })
+    }
+
     if (path === '/send' && req.method === 'POST') {
       const body = await readBody(req)
       if (!authed(req, body)) return json(res, 401, { error: 'bad pairing token' })
@@ -114,9 +190,18 @@ const server = createServer(async (req, res) => {
       if (!isDemoChat && !store.isWriteEnabled(row.chat_id)) {
         return json(res, 403, { error: 'writes are disabled for this chat (enable per-chat writes first)' })
       }
-      const drafts = buildDrafts(row)
-      const draft = drafts[Number(body.draftIndex || 0)]
-      if (!draft) return json(res, 400, { error: 'draft index out of range' })
+      // Voice replies send the spoken transcript as custom text; typed
+      // drafts keep the existing draftIndex path. Same checks either way.
+      let draft
+      if (typeof body.text === 'string') {
+        draft = body.text.trim()
+        if (!draft) return json(res, 400, { error: 'empty reply text' })
+        if (draft.length > 500) return json(res, 400, { error: 'reply text too long (max 500 chars)' })
+      } else {
+        const drafts = buildDrafts(row)
+        draft = drafts[Number(body.draftIndex || 0)]
+        if (!draft) return json(res, 400, { error: 'draft index out of range' })
+      }
 
       let mode = 'demo-log'
       if (bot && row.chat_id && !isDemoChat) {

@@ -5,7 +5,9 @@ import {
   TextContainerUpgrade,
   OsEventTypeList,
 } from '@evenrealities/even_hub_sdk'
-import { nextSelected, nextDraftIndex } from './nav'
+import { nextSelected, nextDraftIndex, voiceReplyAvailable, detailOptionCount } from './nav'
+import { UndoGuard } from './undo'
+import { PcmRecorder, pcmToBase64 } from './audio'
 
 // TeleGlance talks ONLY to its own origin: Vite (dev) proxies /api to the
 // user's backend on 127.0.0.1:8787 — see vite.config.ts and app.json.
@@ -71,11 +73,98 @@ const bridge = await waitForEvenAppBridge()
 
 let digest: Digest = FALLBACK
 let offline = false
-let page: 'digest' | 'detail' | 'sent' | 'pair' = 'digest'
+let page: 'digest' | 'detail' | 'sent' | 'pair' | 'voice' | 'sending' = 'digest'
 let selected = 0
 let draftIndex = 0
 let statusLine = ''
 let pairCode = ''
+
+// Undo guard: after the user picks SEND, the app holds the send for 3 s
+// ("Sending… tap to undo") and only then fires the /send request once.
+// A tap inside the window cancels it — nothing is ever sent. Client-side
+// only; the backend is untouched. The snapshot is captured at arm time so
+// a later selection change cannot retarget the send, and the return target
+// is remembered so a cancel lands back on the right screen.
+type PendingSend =
+  | { kind: 'draft'; itemId: number; draftIndex: number; text: string; returnTo: 'detail' }
+  | { kind: 'voice'; itemId: number; text: string; returnTo: 'voice' }
+let pendingSend: PendingSend | null = null
+const undoGuard = new UndoGuard()
+let undoTicker: ReturnType<typeof setInterval> | null = null
+
+function stopUndoTicker() {
+  if (undoTicker !== null) {
+    clearInterval(undoTicker)
+    undoTicker = null
+  }
+}
+
+async function renderSending() {
+  if (!pendingSend) return
+  page = 'sending'
+  const seconds = undoGuard.secondsLeft(Date.now())
+  await upgrade(1, 'header', 'Sending…')
+  await upgrade(2, 'main', `"${pendingSend.text}"`)
+  await upgrade(3, 'action', `Sending in ${seconds}s — Tap: UNDO · 2xTap: back`)
+}
+
+async function armUndoGuard(pending: PendingSend) {
+  pendingSend = pending
+  undoGuard.onFire = async () => {
+    stopUndoTicker()
+    const toSend = pendingSend
+    pendingSend = null
+    if (toSend) await doSend(toSend)
+  }
+  if (!undoGuard.arm(Date.now())) {
+    // A guard is already pending; the second SEND is dropped, never queued.
+    pendingSend = null
+    return
+  }
+  await renderSending()
+  undoTicker = setInterval(() => {
+    // Refresh the countdown; the guard's own timer fires the send.
+    void renderSending()
+  }, 500)
+}
+
+async function cancelPendingSend() {
+  if (!undoGuard.cancel()) return
+  stopUndoTicker()
+  const to = pendingSend?.returnTo ?? 'detail'
+  pendingSend = null
+  if (to === 'voice') await renderVoice()
+  else await renderDetail()
+}
+
+// The one and only /send call. Runs once, only when the undo window
+// expires untouched. The draft and voice paths share it.
+async function doSend(pending: PendingSend) {
+  const body = pending.kind === 'draft'
+    ? { itemId: pending.itemId, draftIndex: pending.draftIndex }
+    : { itemId: pending.itemId, text: pending.text }
+  try {
+    const res = await fetch(`${BACKEND_URL}/send`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-pairing-token': PAIRING_TOKEN },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    statusLine = data.mode === 'telegram'
+      ? `To ${data.chatTitle}: "${data.text}"`
+      : `Logged in demo mode: "${data.text}"`
+    await renderSent(true)
+  } catch (e) {
+    statusLine = e instanceof Error ? e.message : 'backend unreachable'
+    await renderSent(false)
+  }
+}
+const recorder = new PcmRecorder()
+let voicePhase: 'idle' | 'recording' | 'working' | 'menu' | 'error' = 'idle'
+let voiceTranscript = ''
+let voiceError = ''
+let voiceMs = 0
 
 const bucketTag = (b: string) => (b === 'urgent' ? '[URGENT]' : b === 'fyi' ? '[FYI]' : '[noise]')
 
@@ -151,9 +240,91 @@ async function renderDetail() {
     await upgrade(3, 'action', `Draft (copy-ready): ${item.drafts[0]}\nRead-only mode — sending is off. 2xTap: back`)
   } else if (writesOff(item)) {
     await upgrade(3, 'action', `Writes are OFF for ${item.chatTitle}.\nTap: ENABLE writes · 2xTap: back`)
+  } else if (draftIndex === item.drafts.length) {
+    await upgrade(3, 'action', 'Voice reply — Tap: RECORD · Scroll: other draft · 2xTap: back')
   } else {
     await upgrade(3, 'action', `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
   }
+}
+
+async function renderVoice() {
+  const item = digest.items[selected]
+  if (!item) return renderDigest()
+  page = 'voice'
+  if (voicePhase === 'recording') {
+    await upgrade(1, 'header', `Voice reply · ${item.chatTitle}`)
+    await upgrade(2, 'main', 'Recording… speak now.')
+    await upgrade(3, 'action', 'Tap: STOP & transcribe · 2xTap: cancel')
+  } else if (voicePhase === 'working') {
+    await upgrade(2, 'main', 'Transcribing…')
+    await upgrade(3, 'action', 'Please wait — taps ignored.')
+  } else if (voicePhase === 'menu') {
+    await upgrade(1, 'header', `Voice reply · ${item.chatTitle}`)
+    await upgrade(2, 'main', `You said:\n"${voiceTranscript}"`)
+    await upgrade(3, 'action', 'Tap: SEND · Scroll: REWRITE · 2xTap: cancel')
+  } else if (voicePhase === 'error') {
+    await upgrade(1, 'header', `Voice reply · ${item.chatTitle}`)
+    await upgrade(2, 'main', voiceError)
+    await upgrade(3, 'action', 'Tap: record again · 2xTap: back')
+  }
+}
+
+async function startVoiceReply() {
+  voicePhase = 'recording'
+  voiceTranscript = ''
+  voiceError = ''
+  await renderVoice()
+  await recorder.start(on => bridge.audioControl(on))
+}
+
+async function finishVoiceReply() {
+  const pcm = await recorder.stop(on => bridge.audioControl(on))
+  if (pcm.length === 0) {
+    // No frames arrived (the simulator has no live mic): an honest error,
+    // never a scripted or invented transcript.
+    voicePhase = 'error'
+    voiceError = 'No audio captured — the simulator\nhas no live mic. On real G2,\nrecord again and speak clearly.'
+    await renderVoice()
+    return
+  }
+  voicePhase = 'working'
+  await renderVoice()
+  const started = Date.now()
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 30000)
+    const item = digest.items[selected]
+    const res = await fetch(`${BACKEND_URL}/stt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-pairing-token': PAIRING_TOKEN },
+      body: JSON.stringify({ audio: pcmToBase64(pcm), itemId: item?.id }),
+      signal: ctrl.signal,
+    })
+    clearTimeout(timer)
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    voiceTranscript = data.transcript
+    voiceMs = Date.now() - started
+    console.log('[Iris] voice stt ms:', voiceMs, 'transcript:', voiceTranscript)
+    voicePhase = 'menu'
+  } catch (e) {
+    voicePhase = 'error'
+    voiceError = e instanceof Error ? e.message : 'transcription failed'
+  }
+  await renderVoice()
+}
+
+async function sendVoiceReply() {
+  const item = digest.items[selected]
+  if (!item || !voiceTranscript) return
+  // The send itself is held by the undo guard for 3 s; nothing is posted yet.
+  await armUndoGuard({ kind: 'voice', itemId: item.id, text: voiceTranscript, returnTo: 'voice' })
+}
+
+async function cancelVoiceReply() {
+  if (recorder.isRecording) await recorder.stop(on => bridge.audioControl(on))
+  voicePhase = 'idle'
+  await renderDetail()
 }
 
 async function enableWrites() {
@@ -202,22 +373,10 @@ async function loadDigest() {
 async function sendSelected() {
   const item = digest.items[selected]
   if (!item || !item.canReply) return
-  try {
-    const res = await fetch(`${BACKEND_URL}/send`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-pairing-token': PAIRING_TOKEN },
-      body: JSON.stringify({ itemId: item.id, draftIndex }),
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    statusLine = data.mode === 'telegram'
-      ? `To ${data.chatTitle}: "${data.text}"`
-      : `Logged in demo mode: "${data.text}"`
-    await renderSent(true)
-  } catch (e) {
-    statusLine = e instanceof Error ? e.message : 'backend unreachable'
-    await renderSent(false)
-  }
+  const text = item.drafts[draftIndex]
+  if (!text) return
+  // The send itself is held by the undo guard for 3 s; nothing is posted yet.
+  await armUndoGuard({ kind: 'draft', itemId: item.id, draftIndex, text, returnTo: 'detail' })
 }
 
 // Boot: create the single page, then fill it with the live digest.
@@ -237,6 +396,32 @@ await loadDigest()
 console.log('[TeleGlance] digest loaded, offline =', offline, 'items =', digest.items.length)
 await renderDigest()
 
+// Simulator-test hook (dev only): ?test=voice boots straight into the
+// voice recording screen for the first digest item. The packaged .ehpk
+// loads index.html with no query string, so this can never trigger on
+// real hardware. It exists because simulator automation cannot deliver
+// scroll events to a text-container app (verified 2026-11-23), so the
+// voice row is otherwise unreachable in the simulator.
+if (new URLSearchParams(location.search).get('test') === 'voice' && digest.items.length > 0) {
+  selected = 0
+  draftIndex = digest.items[0].drafts.length
+  await startVoiceReply()
+}
+
+// Simulator-test hook (dev only): ?test=voice-menu boots straight into
+// the voice menu with a clearly labelled TEST transcript, so the voice
+// undo-guard path can be exercised in the simulator (no live mic exists
+// there). Same rule as ?test=voice: the packaged .ehpk loads index.html
+// with no query string, so this can never trigger on real hardware, and
+// the text is only ever sent to a demo chat in tests — never a real
+// Telegram chat (the live stack is never pointed at this hook).
+if (new URLSearchParams(location.search).get('test') === 'voice-menu' && digest.items.length > 0) {
+  selected = 0
+  voicePhase = 'menu'
+  voiceTranscript = 'TEST VOICE UNDO — simulator test string, not a real transcript.'
+  await renderVoice()
+}
+
 // CLICK_EVENT is 0 and protobuf omits zero-value fields, so a tap arrives
 // with eventType undefined — resolve the default INSIDE the envelope check
 // (pattern carried over from the official minimal template).
@@ -246,10 +431,23 @@ function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeLis
 }
 
 const unsubscribe = bridge.onEvenHubEvent(async event => {
+  // Audio frames arrive on their own branch and carry no sys/text/list
+  // event — check FIRST, before the click default below, or every frame
+  // would look like a tap.
+  if (event.audioEvent?.audioPcm !== undefined) {
+    recorder.push(event.audioEvent.audioPcm)
+    return
+  }
+
   const types = [eventTypeOf(event.sysEvent), eventTypeOf(event.textEvent), eventTypeOf(event.listEvent)]
   const has = (t: OsEventTypeList) => types.includes(t)
 
   if (has(OsEventTypeList.SYSTEM_EXIT_EVENT) || has(OsEventTypeList.ABNORMAL_EXIT_EVENT)) {
+    if (recorder.isRecording) await recorder.stop(on => bridge.audioControl(on))
+    // A pending send must never fire after the app exits.
+    undoGuard.cancel()
+    stopUndoTicker()
+    pendingSend = null
     unsubscribe()
     return
   }
@@ -257,6 +455,8 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
   // Double-tap: exit from the digest page, "back" everywhere else.
   if (has(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
     if (page === 'digest') await bridge.shutDownPageContainer(1)
+    else if (page === 'sending') await cancelPendingSend()
+    else if (page === 'voice') await cancelVoiceReply()
     else await renderDigest()
     return
   }
@@ -279,10 +479,20 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
     } else if (page === 'detail') {
       const item = digest.items[selected]
       if (item?.canReply && !writesOff(item) && !digest.readOnly) {
-        draftIndex = nextDraftIndex(draftIndex, dir, item.drafts.length)
-        await upgrade(3, 'action',
-          `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
+        // Drafts plus the trailing [Voice reply] row.
+        const count = detailOptionCount(item.drafts.length, voiceReplyAvailable(item, !!digest.readOnly))
+        const prev = draftIndex
+        draftIndex = nextDraftIndex(draftIndex, dir, count)
+        if (prev === item.drafts.length || draftIndex === item.drafts.length) {
+          await renderDetail()
+        } else {
+          await upgrade(3, 'action',
+            `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
+        }
       }
+    } else if (page === 'voice' && voicePhase === 'menu') {
+      // Scroll on the voice menu means REWRITE: record again.
+      await startVoiceReply()
     }
     return
   }
@@ -292,6 +502,16 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
       if (selected === digest.items.length) await renderPair()
       else await renderDetail()
     }
+    else if (page === 'sending') {
+      // A tap inside the 3 s window cancels the send — nothing is posted.
+      await cancelPendingSend()
+    }
+    else if (page === 'voice') {
+      if (voicePhase === 'recording') await finishVoiceReply()
+      else if (voicePhase === 'menu') await sendVoiceReply()
+      else if (voicePhase === 'error') await startVoiceReply()
+      // 'working': taps ignored until STT resolves.
+    }
     else if (page === 'detail') {
       const item = digest.items[selected]
       if (item && writesOff(item)) await enableWrites()
@@ -299,6 +519,7 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
         statusLine = 'Read-only mode is on — sending is disabled.'
         await renderSent(false)
       }
+      else if (item && voiceReplyAvailable(item, !!digest.readOnly) && draftIndex === item.drafts.length) await startVoiceReply()
       else await sendSelected()
     }
     else if (page === 'sent') {

@@ -14,3 +14,20 @@ export function nextSelected(selected: number, dir: number, maxIndex: number): n
 export function nextDraftIndex(draftIndex: number, dir: number, count: number): number {
   return (draftIndex + dir + count) % count
 }
+
+/** Voice reply is a send, so it follows the same gates as the text drafts:
+ * the chat must accept replies, writes must be on (demo chats are on by
+ * default; real chats start OFF), and the app must not be read-only. */
+export function voiceReplyAvailable(
+  item: { canReply: boolean; writeEnabled?: boolean },
+  readOnly: boolean,
+): boolean {
+  if (!item.canReply || readOnly) return false
+  return item.writeEnabled !== false
+}
+
+/** Selectable rows on a detail page: the text drafts plus the trailing
+ * [Voice reply] row when it is available. */
+export function detailOptionCount(draftCount: number, voiceAvailable: boolean): number {
+  return draftCount + (voiceAvailable ? 1 : 0)
+}

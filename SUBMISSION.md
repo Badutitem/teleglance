@@ -46,8 +46,46 @@ PZGwLfOcSRE masih ada (Unlisted, tidak dihapus).
 (video bersuara v2 + .ehpk baru) — sudah ditautkan di BUIDL sebagai link
 "Other" 26 Nov 15:45 (tanpa label, kolom Other cuma kotak URL).
 
-**Feature requests (deliverable, up to 5):**
-1. Telegram Bot API: a read-only "digest scope" for bots — message counts
+**Voice reply (built 26 Nov, NOT yet on BUIDL):** speak the reply on the
+glasses — a "[Voice reply]" row on the detail page records via the G2 mic
+(`g2-microphone`, SDK `audioControl` + `audioEvent`), transcribes locally
+with faster-whisper `tiny` on the user's own backend (sidecar, no API key,
+no cloud), and offers Send / Rewrite / Cancel. STT language follows the
+message being answered (ID/EN). Proven: backend 20/20 tests, app 9/9,
+HTTP end-to-end with real speech clips (ID 1.060 ms, EN 677 ms for ~2.5 s
+clips), simulator flow with the honest empty-buffer error (no fake
+transcript). NOT proven: live mic on real G2 (no device here); tiny model
+sometimes mishears Indonesian words. The BUIDL description above (installed
+15:31) does NOT mention voice, and the current video does not show it —
+decide with the user whether to add a voice line to the description and
+re-record. The voice .ehpk (33.774 bytes, EHPK magic OK) is local only —
+superseded 26 Nov by the 34.421-byte .ehpk that also includes the undo
+guard; release v1.1 still carries the pre-voice .ehpk. Run the sidecar with
+`backend/start-stt-sidecar.sh` (port 8791; the backend answers 503 honestly
+if it is down).
+
+**Undo guard, 3 detik (built 26 Nov, NOT yet on BUIDL):** sesudah user
+memilih SEND (draf teks maupun balasan suara), aplikasi menahan kirim
+selama 3 detik dan menampilkan "Sending… tap to undo" dengan hitung
+mundur. Tap di dalam jendela membatalkan — TIDAK ADA request yang
+dikirim. Kalau 3 detik habis tanpa batal, POST /send yang sudah ada
+jalan tepat sekali. Client-side saja, backend TIDAK berubah; gerbang
+kirim yang sama tetap berlaku (writes ON + bukan read-only). Ide ini
+diambil dari Cue (build 51858) — satu-satunya keunggulan keamanan
+rival yang Iris tidak punya. Proven: unit test logika 6/6 (app 15/15
+total), simulator 4 skenario lawan backend demo + proxy penghitung
+(backend demo 8790, tanpa token bot — TIDAK ADA pesan Telegram yang
+terkirim selama tes): batal draf → 0 /send; habis draf → tepat 1 /send;
+batal suara → 0 /send; habis suara → tepat 1 /send (teks uji). Bukti
+layar: evidence/undo-shot-*.png. Hook dev baru `?test=voice-menu`
+(boot ke menu suara dengan transkrip TEST berlabel, sama aturannya
+dengan `?test=voice`: .ehpk tidak pernah bawa query). .ehpk baru
+34.421 byte (magic EHPK OK, sudah termasuk voice + undo guard),
+lokal saja; release v1.1 masih berisi .ehpk pra-voice. Video dan
+deskripsi BUIDL belum menampilkan/menyebut undo guard — sama seperti
+voice, putuskan dengan user sebelum submit.
+
+**Feature requests (deliverable, up to 5):**1. Telegram Bot API: a read-only "digest scope" for bots — message counts
    and metadata for chats the user consents to, without the bot needing to
    be a full member of every group.
 2. Telegram Bot API: a first-class "assistant identity" badge, so a reply
@@ -105,9 +143,12 @@ PZGwLfOcSRE masih ada (Unlisted, tidak dihapus).
 
 1. Repo publik https://github.com/Badutitem/teleglance — sudah ada, head
    234b0624 (26 Nov). Push berikutnya: logo-iris.png saja (binary, rute
-   web UI).
+   web UI). Catatan: kode voice reply + undo guard (26 Nov, belum di-push)
+   + .ehpk baru (34.421 byte, lokal) belum masuk repo/release.
 2. Final demo video — SELESAI 26 Nov 15:28. Video baru v2 bersuara
    https://youtu.be/TZjN9Ppy3-o, link BUIDL sudah diganti, release GitHub
    v1.1 https://github.com/Badutitem/teleglance/releases/tag/v1.1 (video
-   + .ehpk baru).
+   + .ehpk baru). SISA: video belum menampilkan voice reply dan undo guard
+   (rekam ulang bila mau), deskripsi BUIDL belum menyebut voice/undo guard
+   (tambah baris bila mau), release baru buat .ehpk suara + undo guard.
 3. User klik Submit for Review (deadline 30 Nov 02:59 WIB).

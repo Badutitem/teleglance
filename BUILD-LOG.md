@@ -240,3 +240,128 @@ BELUM SELESAI (butuh tangan user): (a) pesan tes baru di grup Siluman — digest
   di halaman publik. Label tidak bisa dipasang (kolom Other cuma kotak URL,
   tanpa kolom label) jadi tampil sebagai URL mentah. Nama/tagline/deskripsi/
   video/logo/tag tidak berubah.
+
+## 2026-11-26 — Voice reply gratis (Whisper lokal) — DIBANGUN
+Perintah user "Kita coba" (15:52) setelah riset jalur 4/4 GO
+(`../VOICE-REPLY-RESEARCH.md`). Tanpa API key, tanpa biaya.
+- app.json: permission `g2-microphone` ditambah (sebelumnya cuma network).
+- Aplikasi (`app/src/audio.ts` baru, ditulis dari dok SDK 0.0.10 —
+  pola jepee cuma referensi, bukan copy): `PcmRecorder` batch frame PCM
+  s16le 16 kHz mono dari `bridge.audioControl` + `event.audioEvent`;
+  `normalizePcm` terima Uint8Array / number[] / base64 (catatan .d.ts:
+  host bisa kirim ketiganya). Layar reply suara di main.ts: baris
+  "[Voice reply]" ke-4 di halaman detail (scroll, ikut gerbang kirim
+  yang sama: writes ON + bukan read-only) → rekam → tap STOP →
+  POST /stt → transkrip jadi teks balasan → menu Tap: SEND ·
+  Scroll: REWRITE · 2xTap: cancel. Frame audio dicek DULUAN di handler
+  (jebakan jepee: frame tanpa sysEvent bisa kebaca klik).
+- Backend: `POST /stt` terima {audio: base64 PCM, itemId} → bahasa STT
+  = bahasa pesan yang dibalas (`detectLanguage` baru di scoring.mjs,
+  pakai penanda ID yang sama dengan draf) → teruskan ke sidecar →
+  {transcript, language, sttMs}. Buffer kosong → 400 jujur
+  ("no audio captured"), TIDAK PERNAH transkrip palsu/skrip.
+  `/send` terima `text` kustom (balasan suara) di samping draftIndex
+  lama — gerbang auth/read-only/can_reply/writeEnabled sama.
+  Sidecar down → 503 jujur ("start the STT sidecar").
+- Sidecar `backend/stt-sidecar.py`: proses Python persisten, HTTP
+  127.0.0.1:8791, faster-whisper `tiny` int8 dimuat sekali (±3,8 dtk),
+  audio diumpan array float32 (JANGAN path file — bug PyAV 19.0.2).
+  Jalankan: `backend/start-stt-sidecar.sh` (wajib — exec jalan sebagai
+  root, PYTHONPATH=/home/hatch/.local/lib/python3.12/site-packages
+  quirk yang sama kayak kaggle CLI). Cek: curl 127.0.0.1:8791/health.
+  PENGECUALIAN TERCATAT: backend tidak lagi murni stdlib-only — sidecar
+  Python adalah satu-satunya pengecualian, dan cuma untuk STT.
+- Tes: backend 20/20 (`npm test`: 10 lama + 10 baru STT/kirim-teks,
+  termasuk stub sidecar + server anak + 503 saat sidecar mati);
+  aplikasi 9/9 (`npm test`: audio 5 + nav 4, termasuk matriks gerbang
+  voice). E2E HTTP dengan klip TTS asli → sidecar asli: ID 2,47 dtk →
+  "Oke, jam sepoluh bisa sampai ketemu beser." (tiny salah dengar
+  "sepuluh"→"sepoluh", "besok"→"beser"), 1.060 ms; EN 2,28 dtk →
+  "Sounds good? See you at 10 tomorrow.", 677 ms; /send teks suara 200
+  dalam 1–4 ms. Latensi tap-stop → draf ≈ 0,7–1,1 dtk untuk klip ~2,5 dtk.
+- Simulator (webkit diinstal ulang — VM sempat wipe lib lagi; perbaikan
+  cogentco: hapus HANYA token ` http://mirror.cogentco.com/...`, jangan
+  sed `/cogentco/d` satu baris — itu merusak file sources):
+  hook `?test=voice` (cuma aktif pakai query eksplisit; .ehpk tak
+  pernah bawa query, jadi tak bisa ke-trigger di hardware) — perlu
+  karena automation simulator TIDAK bisa kirim event scroll ke aplikasi
+  text-container, jadi baris voice tak bisa dicapai pakai klik biasa.
+  Bukti layar (evidence/voice-shot-*.png): rekam ("Recording… speak
+  now.") → tap STOP → error jujur "No audio captured — the simulator
+  has no live mic." → tap lagi → rekam lagi → 2xTap → detail item #52
+  asli dengan baris "Voice reply — Tap: RECORD". Konsol bersih, tanpa
+  error. sentReply #52 TIDAK berubah — tidak ada kirim kedua.
+- .ehpk di-pack ulang: 33.774 byte, magic EHPK OK (sebelumnya 32.552).
+  BELUM dirilis: release v1.1 masih berisi .ehpk lama; .ehpk suara baru
+  cuma ada lokal sampai release baru dibuat. Kode suara juga BELUM
+  di-push ke GitHub.
+- Batas jujur: mic live di G2 asli belum teruji (tak ada device);
+  model tiny kadang salah dengar kata ID; voice mewarisi celah
+  backend-tak-terjangkau-dari-kacamata (sama kayak digest/kirim hari
+  ini). Video demo saat ini TIDAK menampilkan voice — rekam ulang
+  adalah langkah sisa.
+- Stack yang ditinggal jalan: backend 8787 (DB live, ingest on) +
+  sidecar 8791 + vite 5173. Simulator dimatikan sesudah tes.
+
+## 2026-11-26 — Undo guard 3 detik — DIBANGUN
+Perintah user "Undo guard dulu" (16:00) setelah diputuskan urutannya
+(undo guard dulu, submit belakangan). Ide dari Cue (build 51858) —
+satu-satunya keunggulan keamanan rival yang Iris tidak punya.
+- Aplikasi saja, backend TIDAK berubah. Sesudah user memilih SEND
+  (draf teks maupun balasan suara), kirim ditahan 3 detik: layar
+  "Sending…" + teks yang akan dikirim + "Sending in Ns — Tap: UNDO ·
+  2xTap: back". Tap di dalam jendela = batal, TIDAK ADA request yang
+  dikirim. Habis 3 detik tanpa batal = POST /send yang sudah ada jalan
+  tepat sekali. Snapshot (itemId + draftIndex/teks + layar kembali)
+  ditangkap saat arm, jadi perubahan pilihan sesudahnya tidak bisa
+  mengalihkan kirim; arm kedua selagi pending ditolak, bukan diantre.
+  Gerbang kirim yang sama tetap berlaku (writes ON + bukan read-only)
+  karena guard cuma dipasang dari jalur klik yang sudah lolos gerbang.
+  Keluar aplikasi (SYSTEM/ABNORMAL_EXIT) membatalkan guard yang
+  pending — kirim tidak pernah jalan sesudah exit.
+- Logika murni di `app/src/undo.ts` baru (`UndoGuard` + hitung mundur,
+  scheduler injectable supaya dites tanpa nunggu waktu nyata) +
+  `app/test/undo.test.mjs` 6 tes. State machine text-container
+  terbukti bersih: halaman baru 'sending', klik = batal, 2xTap = batal
+  + kembali, scroll diabaikan, kembali ke detail (draf) atau menu suara
+  (voice) sesuai jalur. Hook dev baru `?test=voice-menu` (boot ke menu
+  suara dengan transkrip TEST berlabel, aturan sama dengan `?test=voice`:
+  .ehpk tidak pernah bawa query). Hook `?test=voice` tidak disentuh.
+- Tes unit aplikasi: 15/15 (`npm test`: 9 lama + 6 undo baru).
+  Backend tidak disentuh, tesnya tidak berubah.
+- Tes simulator 4 skenario lawan stack tes terpisah (backend demo
+  8790 DB segar 47 pesan, TANPA token bot + vite 5174 + proxy
+  penghitung POST /send di 8795 — TIDAK ADA pesan Telegram yang
+  terkirim selama tes; stack live 8787/5173 tidak disentuh, DB live
+  utuh, sentReply #52 tidak berubah):
+  A batal draf → 0 /send baru (1→1), kembali ke detail;
+  B habis draf → tepat 1 /send baru (1→2), layar Sent ✓ demo-log;
+  C batal suara → 0 /send baru (2→2), kembali ke menu suara,
+  transkrip utuh; D habis suara → tepat 1 /send baru (2→3),
+  sentReply = string TEST. Bukti layar: evidence/undo-shot-*.png
+  (sending + hitung mundur 2 detik, kembali ke detail/menu, Sent).
+  Pelajaran tes: baca screenshot DI ANTARA klik memakan jendela 3
+  detik (percobaan pertama batal draf gagal karena itu — kirim jalan
+  1× sesudah 3 detik tak tersentuh, yang sekaligus membuktikan jalur
+  habis-waktu); skenario batal yang bersih diulang tanpa baca di
+  tengah, dan hitungan proxy-lah buktinya.
+- Jebakan yang ditemui: (1) x11grab keluar RGB tanpa alpha — frame
+  mentah sudah bisa dibaca langsung (teks hijau murni di latar gelap),
+  komposit alpha→hijau dari BUILD-LOG lama menghasilkan layar hijau
+  polos; (2) simulator butuh XAUTHORITY file Xvfb :99
+  (/tmp/xvfb-run.1nGaAe/Xauthority) — tanpa itu GTK gagal init;
+  (3) `pkill -f` dengan pola yang mengandung "5174" literal di tempat
+  lain di baris perintah membunuh shell sendiri (pola cocok dengan
+  baris perintahnya sendiri) — bunuh proses tes pakai PID dari `ss`
+  saja; (4) `npm run pack` menulis out.ehpk (bukan teleglance.ehpk) —
+  disalin manual ke teleglance.ehpk; (5) `xxd` tidak ada di VM, cek
+  magic pakai python.
+- .ehpk di-pack ulang: 34.421 byte, magic EHPK OK (sebelumnya 33.774).
+  BELUM dirilis: release v1.1 masih berisi .ehpk pra-voice; kode undo
+  guard + voice BELUM di-push ke GitHub (perintah: jangan push).
+  Batas jujur: video + deskripsi BUIDL belum menampilkan/menyebut
+  undo guard — rekam ulang + tambah baris adalah langkah sisa sebelum
+  submit (deadline 30 Nov 02:59 WIB).
+- Stack tes dimatikan semua sesudah tes (simulator, vite 5174, proxy
+  8795, backend demo 8790; port terverifikasi kosong). Stack live
+  yang ditinggal jalan: backend 8787 + sidecar 8791 + vite 5173.

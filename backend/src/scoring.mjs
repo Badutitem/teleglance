@@ -65,6 +65,13 @@ export function scoreMessage({ text = '', isMention = false } = {}) {
 // characters so they fit the glasses action line.
 const ID_RE = /\b(pindah|dipindah|digeser|diundur|dimajukan|dibatalkan|besok|hari ini|tolong|mohon|rapat|konfirmasi|segera|penting|jam|jadwal|hadir|siap|makasih|terima kasih|bisa|nggak|tidak)\b/i
 
+// Language of a message, for STT: the voice reply is transcribed in the
+// language of the message being answered (drafts are bilingual the same
+// way). Same ID markers as the draft branches above.
+export function detectLanguage(text = '') {
+  return ID_RE.test(text) ? 'id' : 'en'
+}
+
 function pickTime(text) {
   const m = text.match(/\b\d{1,2}[:.]\d{2}\b/) || text.match(/\bjam\s?(\d{1,2}(?:[:.]\d{2})?)\b/i)
   if (!m) return null
