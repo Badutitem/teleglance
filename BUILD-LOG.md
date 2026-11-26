@@ -409,6 +409,43 @@ satu-satunya keunggulan keamanan rival yang Iris tidak punya.
 - Release v1.2 terbit 16:48 (Latest, video v3 + .ehpk 34.421 byte).
   Link Other BUIDL masih v1.1, ditukar ke v1.2 sebagai penutup langkah release.
 
+## 2026-11-26 — Video demo v4: + mark-as-done (perintah user "Kerjain semuanya")
+- Direkam 17:07-17:09 WIB lawan stack DEMO (bukan live): backend 8790 +
+  DB copy /tmp/iris-demo-v4.sqlite (51 pesan, item #52 asli, backup sqlite
+  konsisten) TANPA token bot + vite 5174 (vite.demo.config.ts sementara,
+  dihapus sesudahnya) + sidecar STT 8791 live (tidak dipakai — STOP tidak
+  pernah ditekan). Simulator Xvfb :99 yang masih jalan dipakai ulang
+  (XAUTHORITY /tmp/xvfb-run.1nGaAe/Xauthority); crop x11grab
+  crop=610:292:640:0 (w:h:x:y — BUKAN x:y:w:h) scale 2x neighbor 15fps.
+- 4 segmen: S1 digest #52 asli → detail Draft 1/3 ("Saya hadir jam
+  3:00."); S2 ?test=voice "Recording… speak now." (STOP TIDAK ditekan —
+  simulator tak ada mic, potongan ke menu adalah edit); S3
+  ?test=voice-menu transkrip TEST berlabel → SEND → "Sending in 2s" →
+  Sent ("Logged in demo mode"); S4 ?test=done detail baris "[Done]" →
+  tap → digest "0 chats · 0 urgent · 0 FYI · 0 noise".
+- Satu-satunya kirim selama rekaman adalah 1× demo-log di backend demo
+  (teks TEST, sentReply COPY #52, mode demo-log). TIDAK ADA pesan
+  Telegram asli yang terkirim. DB live terverifikasi utuh sesudahnya
+  (51 pesan, sentReply #52 tetap "Saya catat jam 3:00 di kalender."
+  mode telegram, done #52 = 0). Stack live 8787/5173/8791 tidak
+  disentuh, tetap jalan.
+- Rakit: 8 beat (digest 3,93 + detail 4,0 + rekam 3,53 + menu 2,93 +
+  sending 3,47 + sent 3,47 + detail-done 2,93 + digest-kosong 3,53 =
+  27,8 dtk) + kartu judul Iris 3,0 dtk + kartu akhir 3,5 dtk = 34,33
+  dtk bisu; 5 caption bawah (angka asli 1 urgent - 0 FYI - 0 noise).
+  Voiceover Inggris 8 klip (Helio avocado_v2:MAI_03): judul, triage,
+  draf, suara/transkripsi lokal, undo, sent/done, 0 urgent, end card.
+  Jeda sunyi maks 1,77 dtk (silencedetect, batas 2 dtk).
+- Hasil: `evidence/iris-demo-final-voiced-v4.mp4` — 1220x584 h264+aac,
+  15fps, 34,20 dtk, 612.258 byte (bisu: iris-demo-final-v4-silent.mp4,
+  34,33 dtk, 264.645 byte). Verifikasi: 34 frame sampel (1 fps) tidak
+  ada yang hitam; 5 frame kunci dicek visual (kartu judul biru-putih
+  bukan hijau, sending + hitung mundur, baris Done, digest 0 urgent,
+  kartu akhir). v3 TIDAK disentuh (526.072 byte). BELUM: upload
+  YouTube, ganti link BUIDL, release baru — dikerjakan parent.
+- Stack demo dimatikan semua sesudah rekaman (8790/5174/simulator;
+  port terverifikasi kosong). Config demo + DB copy dihapus.
+
 ## 2026-11-26 — Mark-as-done — DIBANGUN
 Perintah user "Kerjain satu satu" (16:54) setelah 3 ide tambahan ditawarkan
 (pitch Demo Day, mark-as-done, host backend). Ide dari kebutuhan UX: user
@@ -469,3 +506,40 @@ bisa balas tapi tidak bisa menutup item yang sudah ditangani.
   (8787) masih jalan dengan kode LAMA — /done belum ada di sana.
   Restart backend live dengan kode baru agar /done aktif; migrasi
   kolom done/done_at jalan otomatis saat start, tanpa mengubah data.
+
+## 2026-11-26 — Hardening backend sebelum go-public (Railway)
+Perintah user "Bangun via Railway" (18:45) setelah cek jalur HOSTING-CHECK.md
+vonis GO via Railway trial. Desain final: instance publik Railway = DEMO
+ONLY — seed demo saja (1 urgent/6 FYI/40 noise, jalan otomatis kalau DB
+kosong) + read-only. TIDAK ada token bot Telegram di instance publik,
+TIDAK ada ingest asli, TIDAK ada pesan asli. Cerita "proven live" tetap
+di video + deskripsi BUIDL.
+- Server (`backend/src/server.mjs`): GET /digest, /item/:id, /drafts/:id
+  sekarang digate `authed()` (header x-pairing-token); tanpa token → 401
+  jujur. GET /pairing-code rate-limit in-memory per IP: maks 5 per 10
+  menit, lebih → 429 jujur (IP dari x-forwarded-for kalau ada, else
+  remoteAddress). /health tetap terbuka (healthcheck Railway butuh).
+  /send, /done, /stt, /link, /chats/write TIDAK berubah.
+- Aplikasi (`app/src/main.ts` loadDigest): fetch /digest sekarang kirim
+  header x-pairing-token yang sama seperti endpoint tulis. BACKEND_URL
+  dan whitelist app.json TIDAK disentuh (URL publik belum ada — langkah
+  deploy berikut).
+- `backend/package.json`: tambah `"engines": {"node": ">=22"}` (node:sqlite
+  butuh ≥22.5; nixpacks Railway bisa pasang Node <22 tanpa pin ini).
+  Catatan deploy: kalau nixpacks tetap bandel, set NIXPACKS_NODE_VERSION=24.
+- PAIRING_TOKEN baru yang kuat (crypto.randomBytes 32 byte hex) digenerate
+  untuk instance publik — nilainya HANYA di laporan ke parent, TIDAK
+  ditulis ke repo/file mana pun (cek grep: tidak ada di file repo).
+  Dipakai sebagai env Railway + dibake ke main.ts saat build (langkah
+  berikut, bukan di sini).
+- Tes: backend 32/32 (27 lama + 5 baru di test/auth.test.mjs: /digest,
+  /item, /drafts 401 tanpa token + 200 dengan token + 404 dengan token,
+  /pairing-code 5×200 lalu 429, /health tetap 200). Tes lama yang fetch
+  /digest dan /item tanpa token (done.test.mjs, stt.test.mjs) diperbarui
+  kirim token — alur kirim/done TIDAK berubah dan tetap hijau. Aplikasi
+  16/16, tsc bersih, vite build bersih.
+- BELUM: deploy Railway, ganti BACKEND_URL/whitelist, restart backend live
+  (8787 masih jalan kode lama — /digest tanpa token masih 200 di sana,
+  itu bukti backend live TIDAK disentuh). DB live TIDAK DISENTUH (51
+  pesan, sentReply #52 utuh, done #52 = 0). BUIDL/YouTube/video tidak
+  disentuh. .ehpk tidak di-pack ulang (masih 34.571 byte, done build).

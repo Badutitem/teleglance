@@ -131,7 +131,7 @@ test('/send accepts custom voice text on a demo chat (regression: draftIndex sti
   const data = await r.json()
   assert.equal(data.sent, true)
   assert.equal(data.text, 'Oke, jam sepuluh bisa.')
-  const item = await (await fetch(`${BASE}/item/1`)).json()
+  const item = await (await fetch(`${BASE}/item/1`, { headers: { 'x-pairing-token': TOKEN } })).json()
   assert.equal(item.sentReply, 'Oke, jam sepuluh bisa.')
 
   const r2 = await post('/send', { itemId: 1, draftIndex: 0 })

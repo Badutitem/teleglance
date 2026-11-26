@@ -366,7 +366,12 @@ async function loadDigest() {
     // Hard timeout: a hung backend must never freeze the boot screen.
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 4000)
-    const res = await fetch(`${BACKEND_URL}/digest`, { signal: ctrl.signal })
+    const res = await fetch(`${BACKEND_URL}/digest`, {
+      signal: ctrl.signal,
+      // /digest is auth-gated since the public-host hardening: the app
+      // sends the same pairing token it uses on the write endpoints.
+      headers: { 'x-pairing-token': PAIRING_TOKEN },
+    })
     clearTimeout(timer)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     digest = (await res.json()) as Digest

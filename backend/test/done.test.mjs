@@ -68,6 +68,14 @@ async function post(path, body, token = TOKEN) {
   return fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
 }
 
+// Read endpoints are auth-gated since the public-host hardening.
+function get(path, token = TOKEN) {
+  const headers = {}
+  if (token) headers['x-pairing-token'] = token
+  const url = path.startsWith('http') ? path : `${BASE}${path}`
+  return fetch(url, { headers })
+}
+
 test('/done rejects unauthenticated requests', async () => {
   const r = await post('/done', { itemId: 1 }, null)
   assert.equal(r.status, 401)
@@ -87,7 +95,7 @@ test('/done answers 404 honestly for an unknown item', async () => {
 })
 
 test('/done marks the item and the digest drops it with updated counts', async () => {
-  const before = await (await fetch(`${BASE}/digest`)).json()
+  const before = await (await get('/digest')).json()
   assert.equal(before.counts.urgent, 1)
   assert.equal(before.items[0].id, 1)
 
@@ -95,12 +103,12 @@ test('/done marks the item and the digest drops it with updated counts', async (
   assert.equal(r.status, 200)
   assert.deepEqual(await r.json(), { done: true, itemId: 1 })
 
-  const after = await (await fetch(`${BASE}/digest`)).json()
+  const after = await (await get('/digest')).json()
   assert.equal(after.counts.urgent, 0)
   assert.equal(after.items.some(i => i.id === 1), false)
 
   // Done is a digest dismissal, not a delete: the row is still readable.
-  const item = await (await fetch(`${BASE}/item/1`)).json()
+  const item = await (await get('/item/1')).json()
   assert.equal(item.id, 1)
   assert.equal(item.done, true)
 })

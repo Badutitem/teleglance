@@ -51,6 +51,36 @@ function authed(req, body) {
   return token === PAIRING_TOKEN
 }
 
+// Rate limit for GET /pairing-code: a 6-digit code is brute-forceable on a
+// public host. Max 5 codes per IP per 10 minutes, then an honest 429.
+// In-memory only; a restart resets the buckets (acceptable for a demo).
+const PAIRING_CODE_WINDOW_MS = 10 * 60 * 1000
+const PAIRING_CODE_MAX = 5
+const pairingCodeHits = new Map() // ip -> [epochMs, ...]
+
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for']
+  if (typeof fwd === 'string' && fwd.trim()) return fwd.split(',')[0].trim()
+  return req.socket.remoteAddress || 'unknown'
+}
+
+function pairingCodeAllowed(req) {
+  const ip = clientIp(req)
+  const now = Date.now()
+  const hits = (pairingCodeHits.get(ip) || []).filter(t => now - t < PAIRING_CODE_WINDOW_MS)
+  if (hits.length >= PAIRING_CODE_MAX) {
+    pairingCodeHits.set(ip, hits)
+    return false
+  }
+  hits.push(now)
+  pairingCodeHits.set(ip, hits)
+  // Prune stale buckets so the map does not grow forever.
+  for (const [key, times] of pairingCodeHits) {
+    if (times.every(t => now - t >= PAIRING_CODE_WINDOW_MS)) pairingCodeHits.delete(key)
+  }
+  return true
+}
+
 // Validate a base64 PCM payload (s16le 16 kHz mono, as the G2 mic emits).
 // Returns the decoded Buffer, or null when there is nothing to transcribe.
 function decodePcm(audio) {
@@ -89,6 +119,10 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === '/digest' && req.method === 'GET') {
+      // Read endpoints are gated too: on a public host anyone who knows
+      // the URL could otherwise read the whole digest. The app sends the
+      // pairing token on this fetch (see app/src/main.ts loadDigest).
+      if (!authed(req, {})) return json(res, 401, { error: 'bad pairing token' })
       const digest = buildDigest(store.recentMessages())
       digest.readOnly = READ_ONLY
       // Demo chats bypass the toggle in /send, so report them as enabled.
@@ -100,6 +134,7 @@ const server = createServer(async (req, res) => {
 
     const itemMatch = path.match(/^\/item\/(\d+)$/)
     if (itemMatch && req.method === 'GET') {
+      if (!authed(req, {})) return json(res, 401, { error: 'bad pairing token' })
       const row = store.getMessage(Number(itemMatch[1]))
       if (!row) return json(res, 404, { error: 'item not found' })
       const item = toDigestItem(row)
@@ -110,12 +145,14 @@ const server = createServer(async (req, res) => {
 
     const draftsMatch = path.match(/^\/drafts\/(\d+)$/)
     if (draftsMatch && req.method === 'GET') {
+      if (!authed(req, {})) return json(res, 401, { error: 'bad pairing token' })
       const row = store.getMessage(Number(draftsMatch[1]))
       if (!row) return json(res, 404, { error: 'item not found' })
       return json(res, 200, { itemId: row.id, drafts: buildDrafts(row) })
     }
 
     if (path === '/pairing-code' && req.method === 'GET') {
+      if (!pairingCodeAllowed(req)) return json(res, 429, { error: 'too many pairing codes — try again in a few minutes' })
       return json(res, 200, { code: store.createPairingCode(), expiresInSec: 600 })
     }
 
