@@ -58,38 +58,96 @@ export function scoreMessage({ text = '', isMention = false } = {}) {
   return { score, bucket }
 }
 
+// Drafts are rules-first, zero-API-key, and bilingual: the user's real
+// chats are Indonesian, so an Indonesian message gets Indonesian drafts.
+// Each branch returns exactly 3 drafts in 3 tones: (1) accept/confirm,
+// (2) push back or ask, (3) acknowledge + act. All drafts stay under 90
+// characters so they fit the glasses action line.
+const ID_RE = /\b(pindah|dipindah|digeser|diundur|dimajukan|dibatalkan|besok|hari ini|tolong|mohon|rapat|konfirmasi|segera|penting|jam|jadwal|hadir|siap|makasih|terima kasih|bisa|nggak|tidak)\b/i
+
+function pickTime(text) {
+  const m = text.match(/\b\d{1,2}[:.]\d{2}\b/) || text.match(/\bjam\s?(\d{1,2}(?:[:.]\d{2})?)\b/i)
+  if (!m) return null
+  const raw = (m[1] || m[0]).replace('.', ':').replace(/^jam\s?/i, '')
+  return raw.includes(':') ? raw : `${raw}:00`
+}
+
 export function buildDrafts(item) {
   const text = item.text || ''
+  const id = ID_RE.test(text)
+  const t = pickTime(text)
   const moved = text.match(/\b(?:moved|rescheduled|shifted)(?:\s+\w+){0,3}?\s+(?:to\s+)?(\d{1,2}[:.]\d{2})\b/i)
     || text.match(/\b(?:pindah|dipindah|digeser|diundur|dimajukan)(?:\s+\w+){0,3}?\s+(?:ke\s+)?(?:jam\s+)?(\d{1,2}(?:[:.]\d{2})?)\b/i)
-  if (moved) {
+  const time = moved ? (() => {
     const raw = moved[1].replace('.', ':')
-    const t = raw.includes(':') ? raw : `${raw}:00`
-    return [
-      `Works for me — see you at ${t}.`,
-      `Can we keep the original time instead? ${t} is tight for me.`,
-      `Got it — updating my calendar to ${t}.`,
+    return raw.includes(':') ? raw : `${raw}:00`
+  })() : t
+  const hasMeeting = MEETING_RE.test(text)
+
+  let drafts
+  if (moved && time) {
+    drafts = id ? [
+      `Oke, jam ${time} bisa.`,
+      `Jam ${time} mepet buat saya, bisa tetap jam semula?`,
+      `Siap, saya update kalender ke jam ${time}.`,
+    ] : [
+      `Works for me — see you at ${time}.`,
+      `Can we keep the original time instead? ${time} is tight for me.`,
+      `Got it — updating my calendar to ${time}.`,
     ]
-  }
-  if (/\bdeadline\b|\bsubmit\b|\bdue\b/i.test(text)) {
-    return [
+  } else if (hasMeeting && time) {
+    drafts = id ? [
+      `Saya hadir jam ${time}.`,
+      `Jam ${time} saya nggak bisa, bisa digeser?`,
+      `Saya catat jam ${time} di kalender.`,
+    ] : [
+      `I'll be there at ${time}.`,
+      `Can't make ${time} — can we move it?`,
+      `Adding ${time} to my calendar.`,
+    ]
+  } else if (/\bdeadline\b|\bsubmit\b|\bdue\b|\btenggat\b/i.test(text)) {
+    drafts = id ? [
+      'Siap, saya kirim sebelum deadline.',
+      'Butuh waktu lebih — bisa diperpanjang sehari?',
+      'Oke, ini prioritas saya hari ini.',
+    ] : [
       'On it — I will send it before the deadline.',
       'I need a bit more time — can we extend by a day?',
       'Got it, it is at the top of my list today.',
     ]
-  }
-  if (text.includes('?')) {
-    return [
-      'Yes, that works for me.',
+  } else if (text.includes('?')) {
+    drafts = id ? [
+      time ? `Ya, jam ${time} bisa.` : 'Ya, bisa.',
+      'Saya cek dulu, segera saya konfirmasi di sini.',
+      time ? `Jam ${time} nggak bisa buat saya, maaf.` : 'Maaf, yang itu nggak bisa.',
+    ] : [
+      time ? `Yes, ${time} works for me.` : 'Yes, that works for me.',
       'Let me check first — I will confirm here soon.',
-      'That does not work for me, sorry.',
+      time ? `${time} doesn't work for me, sorry.` : 'That does not work for me, sorry.',
+    ]
+  } else if (FYI_RE.test(text) || /https?:\/\//.test(text)) {
+    drafts = id ? [
+      'Makasih infonya, dicatat.',
+      'Bisa share link atau dokumennya di sini?',
+      'Oke, saya baca hari ini.',
+    ] : [
+      'Thanks for the update — noted.',
+      'Can you share the link or doc here?',
+      'Got it — I will read it today.',
+    ]
+  } else {
+    drafts = id ? [
+      'Oke, makasih.',
+      'Saya cek dulu lalu balas dengan benar.',
+      'Boleh share detail kuncinya di sini?',
+    ] : [
+      'Got it — thanks for the update.',
+      'I will take a look and reply properly soon.',
+      'Can you share the key details here?',
     ]
   }
-  return [
-    'Got it — thanks for the update.',
-    'I will take a look and reply properly soon.',
-    'Can you share the key details here?',
-  ]
+  // Glasses action line fits ~90 chars; never ship a draft that overflows it.
+  return drafts.map(d => d.length > 90 ? d.slice(0, 89) + '…' : d)
 }
 
 function timeLabel(dateUnix) {

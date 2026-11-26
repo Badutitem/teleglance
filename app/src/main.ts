@@ -5,6 +5,7 @@ import {
   TextContainerUpgrade,
   OsEventTypeList,
 } from '@evenrealities/even_hub_sdk'
+import { nextSelected, nextDraftIndex } from './nav'
 
 // TeleGlance talks ONLY to its own origin: Vite (dev) proxies /api to the
 // user's backend on 127.0.0.1:8787 — see vite.config.ts and app.json.
@@ -273,12 +274,12 @@ const unsubscribe = bridge.onEvenHubEvent(async event => {
     const dir = has(OsEventTypeList.SCROLL_TOP_EVENT) ? -1 : 1
     if (page === 'digest') {
       // Selection range includes the trailing [Pair this app] row.
-      selected = Math.min(Math.max(selected + dir, 0), digest.items.length)
+      selected = nextSelected(selected, dir, digest.items.length)
       await renderDigest()
     } else if (page === 'detail') {
       const item = digest.items[selected]
       if (item?.canReply && !writesOff(item) && !digest.readOnly) {
-        draftIndex = (draftIndex + dir + item.drafts.length) % item.drafts.length
+        draftIndex = nextDraftIndex(draftIndex, dir, item.drafts.length)
         await upgrade(3, 'action',
           `Draft ${draftIndex + 1}/3: ${item.drafts[draftIndex]}\nTap: SEND · Scroll: other draft · 2xTap: back`)
       }
